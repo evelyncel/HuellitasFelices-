@@ -1,0 +1,444 @@
+{
+  "info": {
+    "name": "Huellitas Felices - 3 Microservicios REST",
+    "description": "Colección para probar login JWT y endpoints de Mascotas (8000), Adopciones (8001) y Veterinario (8002).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_backend", "value": "http://127.0.0.1:5000" },
+    { "key": "token_backend", "value": "" },
+    { "key": "api_key", "value": "huellitas_api_secret_key_2026" },
+    { "key": "base_mascotas", "value": "http://127.0.0.1:8000" },
+    { "key": "base_adopciones", "value": "http://127.0.0.1:8001" },
+    { "key": "base_veterinario", "value": "http://127.0.0.1:8002" },
+    { "key": "token_mascotas", "value": "" },
+    { "key": "token_adopciones", "value": "" },
+    { "key": "token_veterinario", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "0. Backend Unificado (Puerto 5000)",
+      "item": [
+        {
+          "name": "Login (Puerto 5000)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    var json = pm.response.json();",
+                  "    pm.collectionVariables.set('token_backend', json.token);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-API-KEY", "value": "{{api_key}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"usuario\": \"carlos\",\n  \"password\": \"adoptante123\"\n}"
+            },
+            "url": "{{base_backend}}/auth/login"
+          }
+        },
+        {
+          "name": "Verificar Sesión (/auth/me)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_backend}}" },
+              { "key": "X-API-KEY", "value": "{{api_key}}" }
+            ],
+            "url": "{{base_backend}}/auth/me"
+          }
+        },
+        {
+          "name": "Listar Todas las Mascotas (GET /api/mascotas)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_backend}}" },
+              { "key": "X-API-KEY", "value": "{{api_key}}" }
+            ],
+            "url": "{{base_backend}}/api/mascotas"
+          }
+        },
+        {
+          "name": "Registrar Nueva Mascota (POST /api/mascotas)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_backend}}" },
+              { "key": "X-API-KEY", "value": "{{api_key}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombre\": \"Peluchin\",\n  \"tipo\": \"Perro\",\n  \"edad\": 2,\n  \"sexo\": \"Macho\",\n  \"tamano\": \"Pequeno\",\n  \"raza\": \"Poodle\",\n  \"ciudad\": \"Popayan\",\n  \"descripcion\": \"Cachorro muy amigable y obediente\",\n  \"personalidad\": \"Jugueton\",\n  \"nivel_energia\": \"Alta\",\n  \"compatible_ninos\": true,\n  \"compatible_mascotas\": true,\n  \"vacunado\": true,\n  \"desparasitado\": true,\n  \"esterilizado\": false,\n  \"refugio_id\": 1\n}"
+            },
+            "url": "{{base_backend}}/api/mascotas"
+          }
+        },
+        {
+          "name": "Listar Solicitudes de Adopción (GET /api/adopciones)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_backend}}" },
+              { "key": "X-API-KEY", "value": "{{api_key}}" }
+            ],
+            "url": "{{base_backend}}/api/adopciones"
+          }
+        },
+        {
+          "name": "Registrar Solicitud de Adopción (POST /api/adopciones)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_backend}}" },
+              { "key": "X-API-KEY", "value": "{{api_key}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"usuario_id\": 2,\n  \"mascota_id\": 2,\n  \"motivo\": \"Deseo darle una gran vida a Max\",\n  \"lugar_mascota\": \"Casa con jardin amplio\",\n  \"personas_casa\": 3,\n  \"tiene_otras_mascotas\": false,\n  \"experiencia\": \"He tenido perros de rescate\",\n  \"responsable\": \"Carlos Perez\"\n}"
+            },
+            "url": "{{base_backend}}/api/adopciones"
+          }
+        }
+      ]
+    },
+    {
+      "name": "1. Microservicio Mascotas (8000)",
+      "item": [
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    var json = pm.response.json();",
+                  "    pm.collectionVariables.set('token_mascotas', json.token);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"usuario\": \"admin\",\n  \"password\": \"admin123\"\n}"
+            },
+            "url": "{{base_mascotas}}/auth/login"
+          }
+        },
+        {
+          "name": "Mascotas disponibles por ciudad",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_mascotas}}" }
+            ],
+            "url": "{{base_mascotas}}/api/mascotas/disponibles?ciudad=Popayan"
+          }
+        },
+        {
+          "name": "Filtrar por tipo y edad",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_mascotas}}" }
+            ],
+            "url": "{{base_mascotas}}/api/mascotas/filtrar?tipo=Perro&edad_min=0&edad_max=5"
+          }
+        },
+        {
+          "name": "Buscar compatibles",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_mascotas}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tiene_ninos\": true,\n  \"tiene_otras_mascotas\": false,\n  \"tamano_hogar\": \"Mediano\"\n}"
+            },
+            "url": "{{base_mascotas}}/api/mascotas/compatibles"
+          }
+        },
+        {
+          "name": "Recomendaciones",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_mascotas}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"Perro\",\n  \"tamano\": \"Mediano\",\n  \"edad_min\": 0,\n  \"edad_max\": 5,\n  \"acepta_ninos\": true,\n  \"acepta_otras_mascotas\": true\n}"
+            },
+            "url": "{{base_mascotas}}/api/mascotas/recomendaciones"
+          }
+        },
+        {
+          "name": "Estadísticas",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_mascotas}}" }
+            ],
+            "url": "{{base_mascotas}}/api/mascotas/estadisticas"
+          }
+        },
+        {
+          "name": "Perfil de mascota",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_mascotas}}" }
+            ],
+            "url": "{{base_mascotas}}/api/mascotas/1/perfil"
+          }
+        },
+        {
+          "name": "Seguridad - sin token (401)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_mascotas}}/api/mascotas/estadisticas"
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Microservicio Adopciones (8001)",
+      "item": [
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    var json = pm.response.json();",
+                  "    pm.collectionVariables.set('token_adopciones', json.token);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"usuario\": \"admin\",\n  \"password\": \"admin123\"\n}"
+            },
+            "url": "{{base_adopciones}}/auth/login"
+          }
+        },
+        {
+          "name": "Adopciones pendientes",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_adopciones}}" }
+            ],
+            "url": "{{base_adopciones}}/api/adopciones/pendientes"
+          }
+        },
+        {
+          "name": "Detalle de adopción",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_adopciones}}" }
+            ],
+            "url": "{{base_adopciones}}/api/adopciones/1"
+          }
+        },
+        {
+          "name": "Registrar adopción",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_adopciones}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"usuario_id\": 2,\n  \"mascota_id\": 2,\n  \"motivo\": \"Deseo adoptar un perro protector para mi hogar\",\n  \"lugar_mascota\": \"Casa con patio en Popayan\",\n  \"personas_casa\": 3,\n  \"tiene_otras_mascotas\": false,\n  \"experiencia\": \"Experiencia previa con perros\",\n  \"responsable\": \"Carlos Perez\"\n}"
+            },
+            "url": "{{base_adopciones}}/api/adopciones"
+          }
+        },
+        {
+          "name": "Cambiar estado",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_adopciones}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"estado\": \"Entrevista\"\n}"
+            },
+            "url": "{{base_adopciones}}/api/adopciones/1/estado"
+          }
+        },
+        {
+          "name": "Programar entrevista",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_adopciones}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fecha\": \"2026-10-25\",\n  \"hora\": \"11:30:00\",\n  \"modalidad\": \"Virtual\",\n  \"observaciones\": \"Confirmar disponibilidad del adoptante\"\n}"
+            },
+            "url": "{{base_adopciones}}/api/adopciones/4/entrevista"
+          }
+        },
+        {
+          "name": "Entrevistas próximas",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_adopciones}}" }
+            ],
+            "url": "{{base_adopciones}}/api/entrevistas/proximas"
+          }
+        },
+        {
+          "name": "Seguridad - token inválido (401)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer token_invalido" }
+            ],
+            "url": "{{base_adopciones}}/api/adopciones/pendientes"
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Microservicio Veterinario (8002)",
+      "item": [
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    var json = pm.response.json();",
+                  "    pm.collectionVariables.set('token_veterinario', json.token);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"usuario\": \"admin\",\n  \"password\": \"admin123\"\n}"
+            },
+            "url": "{{base_veterinario}}/auth/login"
+          }
+        },
+        {
+          "name": "Historial veterinario",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_veterinario}}" }
+            ],
+            "url": "{{base_veterinario}}/api/mascotas/1/historial-veterinario"
+          }
+        },
+        {
+          "name": "Registrar control",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_veterinario}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"Control\",\n  \"descripcion\": \"Revisión de peso y vacunas\",\n  \"fecha\": \"2026-10-13\",\n  \"proxima_fecha\": \"2026-11-13\",\n  \"veterinario\": \"Dra. Ana Ruiz\",\n  \"observaciones\": \"Mascota en buen estado\"\n}"
+            },
+            "url": "{{base_veterinario}}/api/mascotas/3/controles"
+          }
+        },
+        {
+          "name": "Vacunas y cuidados pendientes",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_veterinario}}" }
+            ],
+            "url": "{{base_veterinario}}/api/seguimiento/vacunas-pendientes"
+          }
+        },
+        {
+          "name": "Próximos controles",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_veterinario}}" }
+            ],
+            "url": "{{base_veterinario}}/api/seguimiento/proximos-controles?dias=30"
+          }
+        },
+        {
+          "name": "Resumen de seguimiento",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_veterinario}}" }
+            ],
+            "url": "{{base_veterinario}}/api/seguimiento/resumen/1"
+          }
+        },
+        {
+          "name": "Indicadores de salud",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_veterinario}}" }
+            ],
+            "url": "{{base_veterinario}}/api/seguimiento/indicadores"
+          }
+        },
+        {
+          "name": "Seguridad - sin token (401)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_veterinario}}/api/seguimiento/indicadores"
+          }
+        }
+      ]
+    }
+  ]
+}
