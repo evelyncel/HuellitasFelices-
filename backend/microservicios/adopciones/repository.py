@@ -1,4 +1,6 @@
+
 from utils.database import get_cursor, serialize_row, serialize_rows
+
 
 ESTADOS_VALIDOS = {
     "En revisión",
@@ -7,6 +9,20 @@ ESTADOS_VALIDOS = {
     "Rechazada",
     "Cancelada",
 }
+
+
+def convertir_booleano(valor):
+    """Convierte valores recibidos del frontend a booleanos de Python."""
+    if isinstance(valor, bool):
+        return valor
+
+    if isinstance(valor, str):
+        return valor.strip().lower() in ("true", "1", "si", "sí", "yes")
+
+    if isinstance(valor, (int, float)):
+        return valor != 0
+
+    return False
 
 
 def create_adoption(
@@ -20,8 +36,14 @@ def create_adoption(
     experiencia,
     responsable,
 ):
+    tiene_otras_mascotas = convertir_booleano(tiene_otras_mascotas)
+
     with get_cursor(commit=True) as cursor:
-        cursor.execute("SELECT id FROM usuarios WHERE id = %s", (usuario_id,))
+        cursor.execute(
+            "SELECT id FROM usuarios WHERE id = %s",
+            (usuario_id,),
+        )
+
         if not cursor.fetchone():
             raise ValueError(f"No existe el usuario con ID {usuario_id}")
 
@@ -33,7 +55,9 @@ def create_adoption(
             """,
             (mascota_id,),
         )
+
         pet = cursor.fetchone()
+
         if not pet:
             raise ValueError(f"No existe la mascota con ID {mascota_id}")
 
@@ -50,9 +74,11 @@ def create_adoption(
             """,
             (usuario_id, mascota_id),
         )
+
         if cursor.fetchone():
             raise ValueError(
-                "Ya tienes una solicitud activa ('En revisión' o 'Entrevista') para esta mascota"
+                "Ya tienes una solicitud activa ('En revisión' o "
+                "'Entrevista') para esta mascota"
             )
 
         cursor.execute(
@@ -70,6 +96,7 @@ def create_adoption(
                 estado
             )
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'En revisión')
+            RETURNING id
             """,
             (
                 usuario_id,
@@ -78,16 +105,16 @@ def create_adoption(
                 motivo,
                 lugar_mascota,
                 personas_casa,
-                int(tiene_otras_mascotas),
+                tiene_otras_mascotas,
                 experiencia,
                 responsable,
             ),
         )
-        return cursor.lastrowid
+
+        return cursor.fetchone()["id"]
 
 
 def get_all_adoptions(usuario_id=None, refugio_id=None, estado=None, mascota_id=None):
-    """Consulta todas las solicitudes de adopción con joins completos."""
     query = """
         SELECT
             a.id,
@@ -117,18 +144,22 @@ def get_all_adoptions(usuario_id=None, refugio_id=None, estado=None, mascota_id=
         LEFT JOIN refugios r ON m.refugio_id = r.id
         WHERE 1=1
     """
+
     params = []
 
-    if usuario_id:
+    if usuario_id is not None:
         query += " AND a.usuario_id = %s"
         params.append(usuario_id)
-    if refugio_id:
+
+    if refugio_id is not None:
         query += " AND m.refugio_id = %s"
         params.append(refugio_id)
+
     if estado and estado.lower() != "todos":
         query += " AND LOWER(a.estado) = LOWER(%s)"
         params.append(estado)
-    if mascota_id:
+
+    if mascota_id is not None:
         query += " AND a.mascota_id = %s"
         params.append(mascota_id)
 
@@ -165,8 +196,10 @@ def get_pending_adoptions(refugio_id=None):
         LEFT JOIN refugios r ON m.refugio_id = r.id
         WHERE a.estado IN ('En revisión', 'Entrevista')
     """
+
     params = []
-    if refugio_id:
+
+    if refugio_id is not None:
         query += " AND m.refugio_id = %s"
         params.append(refugio_id)
 
@@ -219,13 +252,14 @@ def get_adoption_by_id(adoption_id):
             """,
             (adoption_id,),
         )
+
         row = cursor.fetchone()
+
         if not row:
             return None
 
         adoption = serialize_row(row)
 
-        # Buscar entrevistas relacionadas con esta adopción
         cursor.execute(
             """
             SELECT id, fecha, hora, modalidad, observaciones, estado
@@ -235,34 +269,49 @@ def get_adoption_by_id(adoption_id):
             """,
             (adoption_id,),
         )
+
         adoption["entrevistas"] = serialize_rows(cursor.fetchall())
+
         return adoption
 
 
 def update_adoption_status(adoption_id, new_status):
     if new_status not in ESTADOS_VALIDOS:
         raise ValueError(
-            "Estado inválido. Use: En revisión, Entrevista, Aprobada, Rechazada o Cancelada"
+            "Estado inválido. Use: En revisión, Entrevista, Aprobada, "
+            "Rechazada o Cancelada"
         )
 
     with get_cursor(commit=True) as cursor:
         cursor.execute(
-            "SELECT a.id, a.mascota_id, m.estado AS pet_estado FROM adopciones a JOIN mascotas m ON a.mascota_id = m.id WHERE a.id = %s",
+            """
+            SELECT
+                a.id,
+                a.mascota_id,
+                a.estado AS adopcion_estado,
+                m.estado AS pet_estado
+            FROM adopciones a
+            JOIN mascotas m ON a.mascota_id = m.id
+            WHERE a.id = %s
+            """,
             (adoption_id,),
         )
+
         row = cursor.fetchone()
+
         if not row:
             return False
 
         mascota_id = row["mascota_id"]
         pet_estado = row["pet_estado"]
+        current_status = row["adopcion_estado"]
 
         if new_status == "Aprobada" and pet_estado == "Adoptada":
-            # Verificar si ya estaba aprobada para esta misma adopción
-            cursor.execute("SELECT estado FROM adopciones WHERE id = %s", (adoption_id,))
-            current_adop_estado = cursor.fetchone()["estado"]
-            if current_adop_estado != "Aprobada":
-                raise ValueError("La mascota ya ha sido adoptada en otro proceso y no puede tener múltiples adopciones finalizadas.")
+            if current_status != "Aprobada":
+                raise ValueError(
+                    "La mascota ya ha sido adoptada en otro proceso "
+                    "y no puede tener múltiples adopciones finalizadas."
+                )
 
         cursor.execute(
             """
@@ -282,12 +331,14 @@ def update_adoption_status(adoption_id, new_status):
                 """,
                 (mascota_id,),
             )
-            # Rechazar automáticamente otras solicitudes pendientes para la misma mascota
+
             cursor.execute(
                 """
                 UPDATE adopciones
                 SET estado = 'Rechazada'
-                WHERE mascota_id = %s AND id != %s AND estado IN ('En revisión', 'Entrevista')
+                WHERE mascota_id = %s
+                  AND id != %s
+                  AND estado IN ('En revisión', 'Entrevista')
                 """,
                 (mascota_id, adoption_id),
             )
@@ -303,7 +354,11 @@ def schedule_interview(
     observations,
 ):
     with get_cursor(commit=True) as cursor:
-        cursor.execute("SELECT id FROM adopciones WHERE id = %s", (adoption_id,))
+        cursor.execute(
+            "SELECT id FROM adopciones WHERE id = %s",
+            (adoption_id,),
+        )
+
         if not cursor.fetchone():
             return None
 
@@ -318,6 +373,7 @@ def schedule_interview(
                 estado
             )
             VALUES (%s, %s, %s, %s, %s, 'Programada')
+            RETURNING id
             """,
             (
                 adoption_id,
@@ -327,7 +383,8 @@ def schedule_interview(
                 observations or "",
             ),
         )
-        interview_id = cursor.lastrowid
+
+        interview_id = cursor.fetchone()["id"]
 
         cursor.execute(
             """
@@ -342,7 +399,6 @@ def schedule_interview(
 
 
 def get_interviews(usuario_id=None, refugio_id=None, adopcion_id=None, estado=None):
-    """Consulta entrevistas con filtro por usuario, refugio, solicitud o estado."""
     query = """
         SELECT
             e.id,
@@ -370,17 +426,21 @@ def get_interviews(usuario_id=None, refugio_id=None, adopcion_id=None, estado=No
         LEFT JOIN refugios r ON m.refugio_id = r.id
         WHERE 1=1
     """
+
     params = []
 
-    if usuario_id:
+    if usuario_id is not None:
         query += " AND a.usuario_id = %s"
         params.append(usuario_id)
-    if refugio_id:
+
+    if refugio_id is not None:
         query += " AND m.refugio_id = %s"
         params.append(refugio_id)
-    if adopcion_id:
+
+    if adopcion_id is not None:
         query += " AND e.adopcion_id = %s"
         params.append(adopcion_id)
+
     if estado and estado.lower() != "todos":
         query += " AND LOWER(e.estado) = LOWER(%s)"
         params.append(estado)
@@ -393,9 +453,18 @@ def get_interviews(usuario_id=None, refugio_id=None, adopcion_id=None, estado=No
 
 
 def update_interview(interview_id, data):
+    allowed_fields = [
+        "fecha",
+        "hora",
+        "modalidad",
+        "observaciones",
+        "estado",
+    ]
+
     fields = []
     params = []
-    for key in ["fecha", "hora", "modalidad", "observaciones", "estado"]:
+
+    for key in allowed_fields:
         if key in data:
             fields.append(f"{key} = %s")
             params.append(data[key])
@@ -404,7 +473,12 @@ def update_interview(interview_id, data):
         return False
 
     params.append(interview_id)
-    query = f"UPDATE entrevistas SET {', '.join(fields)} WHERE id = %s"
+
+    query = f"""
+        UPDATE entrevistas
+        SET {', '.join(fields)}
+        WHERE id = %s
+    """
 
     with get_cursor(commit=True) as cursor:
         cursor.execute(query, tuple(params))
