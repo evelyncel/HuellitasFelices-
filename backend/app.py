@@ -1,3 +1,4 @@
+
 import os
 import uuid
 from flask import Flask, jsonify, request, send_from_directory
@@ -7,13 +8,16 @@ from config import Config
 from utils.auth import authenticate_user, create_token, token_required, hash_password
 from utils.database import get_cursor
 
+
 # Configuración de carpeta para subida local de archivos de mascotas
 UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "webp", "gif"}
 
+
 def allowed_file(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
+
 
 # Importar Blueprints de los microservicios
 from microservicios.mascotas.routes import mascotas_bp
@@ -26,15 +30,35 @@ from microservicios.favoritos.routes import favoritos_bp
 from microservicios.refugios.routes import refugios_bp
 from microservicios.usuarios.routes import usuarios_bp, admin_bp
 
+
 app = Flask(__name__)
 
-# Configuración de CORS permitiendo peticiones desde el frontend (puerto 5174 y otros)
+
+# Configuración de CORS para permitir la conexión con el frontend de Vercel
 CORS(
     app,
-    resources={r"/*": {"origins": "*"}},
-    supports_credentials=True,
-    allow_headers=["Content-Type", "Authorization", "X-API-KEY", "x-api-key"],
-    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    resources={
+        r"/*": {
+            "origins": [
+                "https://huellitas-felices-3fz2.vercel.app"
+            ]
+        }
+    },
+    supports_credentials=False,
+    allow_headers=[
+        "Content-Type",
+        "Authorization",
+        "X-API-KEY",
+        "x-api-key"
+    ],
+    methods=[
+        "GET",
+        "POST",
+        "PUT",
+        "PATCH",
+        "DELETE",
+        "OPTIONS"
+    ],
 )
 
 
@@ -62,11 +86,14 @@ def subir_archivo():
         return jsonify({"error": "No se envió ningún archivo en la petición"}), 400
 
     file = request.files.get("file") or request.files.get("foto")
+
     if not file or file.filename == "":
         return jsonify({"error": "Nombre de archivo inválido o vacío"}), 400
 
     if not allowed_file(file.filename):
-        return jsonify({"error": "Formato de archivo no permitido. Use imágenes JPG, JPEG, PNG, WEBP o GIF"}), 400
+        return jsonify({
+            "error": "Formato de archivo no permitido. Use imágenes JPG, JPEG, PNG, WEBP o GIF"
+        }), 400
 
     ext = file.filename.rsplit(".", 1)[1].lower()
     filename = f"mascota_{uuid.uuid4().hex[:12]}.{ext}"
@@ -101,13 +128,17 @@ def login():
         return jsonify({"error": "usuario y password son obligatorios"}), 400
 
     user = authenticate_user(usuario, password)
+
     if not user:
         return jsonify({"error": "Credenciales inválidas"}), 401
 
     if user.get("activo") is False or user.get("activo") == 0:
-        return jsonify({"error": "Esta cuenta de usuario ha sido desactivada. Comunícate con el administrador."}), 403
+        return jsonify({
+            "error": "Esta cuenta de usuario ha sido desactivada. Comunícate con el administrador."
+        }), 403
 
     token = create_token(user)
+
     return jsonify({
         "mensaje": "Inicio de sesión exitoso",
         "token": token,
@@ -145,13 +176,21 @@ def register():
     preferencia_edad = data.get("preferencia_edad") or "Joven"
 
     if not nombre or not usuario or not password:
-        return jsonify({"error": "nombre, usuario y password son obligatorios"}), 400
+        return jsonify({
+            "error": "nombre, usuario y password son obligatorios"
+        }), 400
 
     try:
         with get_cursor(commit=True) as cursor:
-            cursor.execute("SELECT id FROM usuarios WHERE usuario = %s", (usuario,))
+            cursor.execute(
+                "SELECT id FROM usuarios WHERE usuario = %s",
+                (usuario,)
+            )
+
             if cursor.fetchone():
-                return jsonify({"error": "El nombre de usuario ya se encuentra registrado"}), 409
+                return jsonify({
+                    "error": "El nombre de usuario ya se encuentra registrado"
+                }), 409
 
             cursor.execute(
                 """
@@ -178,7 +217,9 @@ def register():
                     preferencia_edad,
                 ),
             )
+
             nuevo_id = cursor.lastrowid
+
             cursor.execute(
                 """
                 SELECT id, nombre, usuario, rol, ciudad, tipo_vivienda, tiene_patio,
@@ -188,14 +229,18 @@ def register():
                 """,
                 (nuevo_id,),
             )
+
             nuevo_usuario = cursor.fetchone()
 
         return jsonify({
             "mensaje": "Usuario adoptante registrado exitosamente",
             "usuario": nuevo_usuario,
         }), 201
+
     except Exception as e:
-        return jsonify({"error": f"Error al registrar usuario: {str(e)}"}), 500
+        return jsonify({
+            "error": f"Error al registrar usuario: {str(e)}"
+        }), 500
 
 
 @app.get("/auth/me")
@@ -204,9 +249,16 @@ def register():
 def me():
     """Endpoint para verificar sesión y obtener información del usuario actual."""
     user = getattr(request, "user", {})
-    # Refrescar info completa desde DB
+
+    # Refrescar información completa desde DB
     with get_cursor() as cursor:
-        cursor.execute("SELECT id, nombre, usuario, rol, ciudad, edad, activo FROM usuarios WHERE id = %s", (user.get("id"),))
+        cursor.execute(
+            """
+            SELECT id, nombre, usuario, rol, ciudad, edad, activo
+            FROM usuarios WHERE id = %s
+            """,
+            (user.get("id"),)
+        )
         db_user = cursor.fetchone()
 
     return jsonify({
@@ -229,6 +281,7 @@ app.register_blueprint(admin_bp)
 
 if __name__ == "__main__":
     port = Config.SERVER_PORT
+
     print("==================================================")
     print("  HUELLITAS FELICES — BACKEND UNIFICADO (FLASK)")
     print("==================================================")
@@ -240,6 +293,7 @@ if __name__ == "__main__":
     print(f"  Microservicio Refugios: http://localhost:{port}/api/refugios")
     print(f"  Microservicio Usuarios y Admin: http://localhost:{port}/api/usuarios")
     print("==================================================")
+
     app.run(
         host=Config.SERVER_HOST,
         port=port,
