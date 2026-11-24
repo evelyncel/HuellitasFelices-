@@ -1,3 +1,4 @@
+
 from utils.database import get_cursor, serialize_rows
 
 PET_COLUMNS = """
@@ -35,6 +36,7 @@ def get_user_favorites(usuario_id):
         WHERE f.usuario_id = %s
         ORDER BY f.id DESC
     """
+
     with get_cursor() as cursor:
         cursor.execute(query, (usuario_id,))
         return serialize_rows(cursor.fetchall())
@@ -42,30 +44,63 @@ def get_user_favorites(usuario_id):
 
 def get_user_favorite_ids(usuario_id):
     with get_cursor() as cursor:
-        cursor.execute("SELECT mascota_id FROM favoritos WHERE usuario_id = %s", (usuario_id,))
+        cursor.execute(
+            """
+            SELECT mascota_id
+            FROM favoritos
+            WHERE usuario_id = %s
+            """,
+            (usuario_id,)
+        )
+
         return [row["mascota_id"] for row in cursor.fetchall()]
 
 
 def add_favorite(usuario_id, mascota_id):
     with get_cursor(commit=True) as cursor:
-        cursor.execute("SELECT id FROM mascotas WHERE id = %s", (mascota_id,))
+
+        # Verificar que la mascota exista
+        cursor.execute(
+            "SELECT id FROM mascotas WHERE id = %s",
+            (mascota_id,)
+        )
+
         if not cursor.fetchone():
             return False, "La mascota no existe"
 
+        # Evitar registrar el mismo favorito dos veces
         cursor.execute(
             """
-            INSERT IGNORE INTO favoritos (usuario_id, mascota_id)
+            SELECT id
+            FROM favoritos
+            WHERE usuario_id = %s AND mascota_id = %s
+            """,
+            (usuario_id, mascota_id)
+        )
+
+        if cursor.fetchone():
+            return True, "Esta mascota ya está en tus favoritos"
+
+        # Registrar favorito
+        cursor.execute(
+            """
+            INSERT INTO favoritos (usuario_id, mascota_id)
             VALUES (%s, %s)
             """,
-            (usuario_id, mascota_id),
+            (usuario_id, mascota_id)
         )
+
         return True, "Agregado a favoritos"
 
 
 def remove_favorite(usuario_id, mascota_id):
     with get_cursor(commit=True) as cursor:
         cursor.execute(
-            "DELETE FROM favoritos WHERE usuario_id = %s AND mascota_id = %s",
-            (usuario_id, mascota_id),
+            """
+            DELETE FROM favoritos
+            WHERE usuario_id = %s AND mascota_id = %s
+            """,
+            (usuario_id, mascota_id)
         )
+
         return cursor.rowcount > 0
