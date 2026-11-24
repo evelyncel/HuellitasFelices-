@@ -160,15 +160,27 @@ def login():
 @app.post("/api/auth/register")
 def register():
     data = request.get_json(silent=True) or {}
+
     nombre = (data.get("nombre") or "").strip()
     usuario = (data.get("usuario") or "").strip()
     password = data.get("password") or ""
     ciudad = (data.get("ciudad") or "Popayán").strip()
-    edad = int(data.get("edad") or 25)
+
+    try:
+        edad = int(data.get("edad") or 25)
+    except (ValueError, TypeError):
+        return jsonify({"error": "La edad debe ser un número válido"}), 400
 
     tipo_vivienda = data.get("tipo_vivienda") or "Casa"
-    tiene_patio = 1 if bool(data.get("tiene_patio", False)) else 0
-    otras_mascotas = 1 if bool(data.get("otras_mascotas", False)) else 0
+
+    def convertir_booleano(valor):
+        if isinstance(valor, str):
+            return valor.strip().lower() in ("true", "1", "si", "sí", "yes")
+        return bool(valor)
+
+    tiene_patio = convertir_booleano(data.get("tiene_patio", False))
+    otras_mascotas = convertir_booleano(data.get("otras_mascotas", False))
+
     tiempo_disponible = data.get("tiempo_disponible") or "Medio"
     experiencia = (data.get("experiencia") or "Amante de los animales").strip()
     preferencia_tipo = data.get("preferencia_tipo") or "Todos"
@@ -182,6 +194,7 @@ def register():
 
     try:
         with get_cursor(commit=True) as cursor:
+
             cursor.execute(
                 "SELECT id FROM usuarios WHERE usuario = %s",
                 (usuario,)
@@ -195,11 +208,26 @@ def register():
             cursor.execute(
                 """
                 INSERT INTO usuarios (
-                    nombre, usuario, password, edad, ciudad, tipo_vivienda,
-                    tiene_patio, otras_mascotas, tiempo_disponible, experiencia,
-                    preferencia_tipo, preferencia_tamano, preferencia_edad, rol, activo
+                    nombre,
+                    usuario,
+                    password,
+                    edad,
+                    ciudad,
+                    tipo_vivienda,
+                    tiene_patio,
+                    otras_mascotas,
+                    tiempo_disponible,
+                    experiencia,
+                    preferencia_tipo,
+                    preferencia_tamano,
+                    preferencia_edad,
+                    rol
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'adoptante', 1)
+                VALUES (
+                    %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, 'adoptante'
+                )
+                RETURNING id
                 """,
                 (
                     nombre,
@@ -218,16 +246,19 @@ def register():
                 ),
             )
 
-            nuevo_id = cursor.lastrowid
+            nuevo_id = cursor.fetchone()["id"]
 
             cursor.execute(
                 """
-                SELECT id, nombre, usuario, rol, ciudad, tipo_vivienda, tiene_patio,
-                       otras_mascotas, tiempo_disponible, experiencia, preferencia_tipo,
-                       preferencia_tamano, preferencia_edad
-                FROM usuarios WHERE id = %s
+                SELECT
+                    id, nombre, usuario, rol, ciudad, edad,
+                    tipo_vivienda, tiene_patio, otras_mascotas,
+                    tiempo_disponible, experiencia, preferencia_tipo,
+                    preferencia_tamano, preferencia_edad
+                FROM usuarios
+                WHERE id = %s
                 """,
-                (nuevo_id,),
+                (nuevo_id,)
             )
 
             nuevo_usuario = cursor.fetchone()
@@ -238,10 +269,10 @@ def register():
         }), 201
 
     except Exception as e:
+        print(f"ERROR EN REGISTRO: {str(e)}")
         return jsonify({
             "error": f"Error al registrar usuario: {str(e)}"
         }), 500
-
 
 @app.get("/auth/me")
 @app.get("/api/auth/me")
@@ -254,8 +285,8 @@ def me():
     with get_cursor() as cursor:
         cursor.execute(
             """
-            SELECT id, nombre, usuario, rol, ciudad, edad, activo
-            FROM usuarios WHERE id = %s
+           SELECT id, nombre, usuario, rol, ciudad, edad
+FROM usuarios WHERE id = %s
             """,
             (user.get("id"),)
         )
