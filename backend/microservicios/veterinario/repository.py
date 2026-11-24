@@ -1,3 +1,4 @@
+
 from datetime import date
 
 from utils.database import get_cursor, serialize_row, serialize_rows
@@ -5,7 +6,10 @@ from utils.database import get_cursor, serialize_row, serialize_rows
 
 def pet_exists(mascota_id):
     with get_cursor() as cursor:
-        cursor.execute("SELECT id FROM mascotas WHERE id = %s", (mascota_id,))
+        cursor.execute(
+            "SELECT id FROM mascotas WHERE id = %s",
+            (mascota_id,)
+        )
         return cursor.fetchone() is not None
 
 
@@ -43,7 +47,11 @@ def register_control(
     observaciones,
 ):
     with get_cursor(commit=True) as cursor:
-        cursor.execute("SELECT id FROM mascotas WHERE id = %s", (mascota_id,))
+        cursor.execute(
+            "SELECT id FROM mascotas WHERE id = %s",
+            (mascota_id,)
+        )
+
         if not cursor.fetchone():
             return None
 
@@ -59,6 +67,7 @@ def register_control(
                 observaciones
             )
             VALUES (%s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
             """,
             (
                 mascota_id,
@@ -70,23 +79,39 @@ def register_control(
                 observaciones,
             ),
         )
-        control_id = cursor.lastrowid
+
+        control_id = cursor.fetchone()["id"]
 
         tipo_lower = tipo.lower()
+
         if "vacuna" in tipo_lower:
             cursor.execute(
-                "UPDATE mascotas SET vacunado = 1 WHERE id = %s",
-                (mascota_id,),
+                """
+                UPDATE mascotas
+                SET vacunado = TRUE
+                WHERE id = %s
+                """,
+                (mascota_id,)
             )
+
         if "desparasit" in tipo_lower:
             cursor.execute(
-                "UPDATE mascotas SET desparasitado = 1 WHERE id = %s",
-                (mascota_id,),
+                """
+                UPDATE mascotas
+                SET desparasitado = TRUE
+                WHERE id = %s
+                """,
+                (mascota_id,)
             )
+
         if "esteril" in tipo_lower:
             cursor.execute(
-                "UPDATE mascotas SET esterilizado = 1 WHERE id = %s",
-                (mascota_id,),
+                """
+                UPDATE mascotas
+                SET esterilizado = TRUE
+                WHERE id = %s
+                """,
+                (mascota_id,)
             )
 
         return control_id
@@ -106,30 +131,34 @@ def get_pending_vaccines_and_care():
                 m.desparasitado,
                 m.esterilizado,
                 CASE
-                    WHEN m.vacunado = 0 THEN 'Vacunación pendiente'
+                    WHEN m.vacunado = FALSE
+                        THEN 'Vacunación pendiente'
                     WHEN EXISTS (
                         SELECT 1
                         FROM historial_veterinario h
                         WHERE h.mascota_id = m.id
-                          AND h.tipo LIKE '%Vacuna%'
+                          AND h.tipo ILIKE '%Vacuna%'
                           AND h.proxima_fecha IS NOT NULL
-                          AND h.proxima_fecha <= CURDATE()
-                    ) THEN 'Refuerzo de vacuna vencido'
-                    WHEN m.desparasitado = 0 THEN 'Desparasitación pendiente'
-                    WHEN m.esterilizado = 0 THEN 'Esterilización pendiente'
+                          AND h.proxima_fecha <= CURRENT_DATE
+                    )
+                        THEN 'Refuerzo de vacuna vencido'
+                    WHEN m.desparasitado = FALSE
+                        THEN 'Desparasitación pendiente'
+                    WHEN m.esterilizado = FALSE
+                        THEN 'Esterilización pendiente'
                     ELSE 'Revisión de cuidados'
                 END AS cuidado_pendiente
             FROM mascotas m
-            WHERE m.vacunado = 0
-               OR m.desparasitado = 0
-               OR m.esterilizado = 0
+            WHERE m.vacunado = FALSE
+               OR m.desparasitado = FALSE
+               OR m.esterilizado = FALSE
                OR EXISTS (
                     SELECT 1
                     FROM historial_veterinario h
                     WHERE h.mascota_id = m.id
-                      AND h.tipo LIKE '%Vacuna%'
+                      AND h.tipo ILIKE '%Vacuna%'
                       AND h.proxima_fecha IS NOT NULL
-                      AND h.proxima_fecha <= CURDATE()
+                      AND h.proxima_fecha <= CURRENT_DATE
                )
             ORDER BY m.nombre ASC
             """
@@ -152,12 +181,12 @@ def get_upcoming_controls(days=30):
                 h.proxima_fecha,
                 h.veterinario,
                 h.observaciones,
-                DATEDIFF(h.proxima_fecha, CURDATE()) AS dias_restantes
+                (h.proxima_fecha - CURRENT_DATE) AS dias_restantes
             FROM historial_veterinario h
             INNER JOIN mascotas m ON h.mascota_id = m.id
             WHERE h.proxima_fecha IS NOT NULL
-              AND h.proxima_fecha BETWEEN CURDATE()
-                  AND DATE_ADD(CURDATE(), INTERVAL %s DAY)
+              AND h.proxima_fecha BETWEEN CURRENT_DATE
+                  AND (CURRENT_DATE + (%s * INTERVAL '1 day'))
             ORDER BY h.proxima_fecha ASC
             """,
             (days,),
@@ -184,7 +213,9 @@ def get_tracking_summary(mascota_id):
             """,
             (mascota_id,),
         )
+
         pet = cursor.fetchone()
+
         if not pet:
             return None
 
@@ -228,7 +259,7 @@ def get_tracking_summary(mascota_id):
             FROM historial_veterinario
             WHERE mascota_id = %s
               AND proxima_fecha IS NOT NULL
-              AND proxima_fecha >= CURDATE()
+              AND proxima_fecha >= CURRENT_DATE
             ORDER BY proxima_fecha ASC
             LIMIT 1
             """,
@@ -249,10 +280,13 @@ def get_tracking_summary(mascota_id):
         por_tipo = cursor.fetchall()
 
         pendientes = []
+
         if not pet["vacunado"]:
             pendientes.append("Vacunación")
+
         if not pet["desparasitado"]:
             pendientes.append("Desparasitación")
+
         if not pet["esterilizado"]:
             pendientes.append("Esterilización")
 
@@ -276,17 +310,29 @@ def get_health_indicators():
         total_mascotas = cursor.fetchone()["total"]
 
         cursor.execute(
-            "SELECT COUNT(*) AS total FROM mascotas WHERE vacunado = 1"
+            """
+            SELECT COUNT(*) AS total
+            FROM mascotas
+            WHERE vacunado = TRUE
+            """
         )
         vacunadas = cursor.fetchone()["total"]
 
         cursor.execute(
-            "SELECT COUNT(*) AS total FROM mascotas WHERE desparasitado = 1"
+            """
+            SELECT COUNT(*) AS total
+            FROM mascotas
+            WHERE desparasitado = TRUE
+            """
         )
         desparasitadas = cursor.fetchone()["total"]
 
         cursor.execute(
-            "SELECT COUNT(*) AS total FROM mascotas WHERE esterilizado = 1"
+            """
+            SELECT COUNT(*) AS total
+            FROM mascotas
+            WHERE esterilizado = TRUE
+            """
         )
         esterilizadas = cursor.fetchone()["total"]
 
@@ -294,7 +340,9 @@ def get_health_indicators():
             """
             SELECT COUNT(*) AS total
             FROM mascotas
-            WHERE vacunado = 0 OR desparasitado = 0 OR esterilizado = 0
+            WHERE vacunado = FALSE
+               OR desparasitado = FALSE
+               OR esterilizado = FALSE
             """
         )
         con_cuidados_pendientes = cursor.fetchone()["total"]
@@ -303,8 +351,9 @@ def get_health_indicators():
             """
             SELECT COUNT(*) AS total
             FROM historial_veterinario
-            WHERE proxima_fecha BETWEEN CURDATE()
-              AND DATE_ADD(CURDATE(), INTERVAL 30 DAY)
+            WHERE proxima_fecha IS NOT NULL
+              AND proxima_fecha BETWEEN CURRENT_DATE
+                  AND (CURRENT_DATE + INTERVAL '30 days')
             """
         )
         controles_proximos_30 = cursor.fetchone()["total"]
@@ -314,7 +363,7 @@ def get_health_indicators():
             SELECT COUNT(*) AS total
             FROM historial_veterinario
             WHERE proxima_fecha IS NOT NULL
-              AND proxima_fecha < CURDATE()
+              AND proxima_fecha < CURRENT_DATE
             """
         )
         controles_vencidos = cursor.fetchone()["total"]
@@ -350,7 +399,6 @@ def get_health_indicators():
 
 
 def get_all_veterinary_records(refugio_id=None):
-    """Consulta todos los registros veterinarios con información de mascota y refugio."""
     query = """
         SELECT
             h.id,
@@ -371,7 +419,9 @@ def get_all_veterinary_records(refugio_id=None):
         LEFT JOIN refugios r ON m.refugio_id = r.id
         WHERE 1=1
     """
+
     params = []
+
     if refugio_id:
         query += " AND m.refugio_id = %s"
         params.append(refugio_id)
@@ -386,7 +436,17 @@ def get_all_veterinary_records(refugio_id=None):
 def update_control(control_id, data):
     fields = []
     params = []
-    for key in ["tipo", "descripcion", "fecha", "proxima_fecha", "veterinario", "observaciones"]:
+
+    allowed_fields = [
+        "tipo",
+        "descripcion",
+        "fecha",
+        "proxima_fecha",
+        "veterinario",
+        "observaciones",
+    ]
+
+    for key in allowed_fields:
         if key in data:
             fields.append(f"{key} = %s")
             params.append(data[key])
@@ -395,7 +455,11 @@ def update_control(control_id, data):
         return False
 
     params.append(control_id)
-    query = f"UPDATE historial_veterinario SET {', '.join(fields)} WHERE id = %s"
+
+    query = (
+        f"UPDATE historial_veterinario "
+        f"SET {', '.join(fields)} WHERE id = %s"
+    )
 
     with get_cursor(commit=True) as cursor:
         cursor.execute(query, tuple(params))
@@ -404,5 +468,8 @@ def update_control(control_id, data):
 
 def delete_control(control_id):
     with get_cursor(commit=True) as cursor:
-        cursor.execute("DELETE FROM historial_veterinario WHERE id = %s", (control_id,))
+        cursor.execute(
+            "DELETE FROM historial_veterinario WHERE id = %s",
+            (control_id,)
+        )
         return cursor.rowcount > 0
