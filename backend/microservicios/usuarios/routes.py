@@ -67,18 +67,7 @@ def editar_usuario_admin(user_id):
     })
 
 
-@usuarios_bp.patch("/<int:user_id>/estado")
-@admin_required
-def cambiar_estado_usuario(user_id):
-    new_status = repository.toggle_user_status(user_id)
-    if new_status is None:
-        return jsonify({"error": "Usuario no encontrado"}), 404
-    estado_texto = "activada" if new_status else "desactivada"
-    return jsonify({
-        "mensaje": f"Cuenta de usuario {estado_texto} correctamente",
-        "id": user_id,
-        "activo": new_status,
-    })
+
 
 
 @admin_bp.get("/estadisticas")
