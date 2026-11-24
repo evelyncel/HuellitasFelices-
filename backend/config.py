@@ -16,6 +16,7 @@ class Config:
     DATABASE_URL = os.getenv("DATABASE_URL")
     # Fallback MySQL‑style variables for local dev (if you still want them)
     DB_HOST = os.getenv("DB_HOST", "localhost")
+    DB_PORT = int(os.getenv("DB_PORT", 5432))
     DB_USER = os.getenv("DB_USER", "postgres")
     DB_PASSWORD = os.getenv("DB_PASSWORD", "")
     DB_NAME = os.getenv("DB_NAME", "postgres")

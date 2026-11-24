@@ -1,7 +1,7 @@
+
 from contextlib import contextmanager
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
-import os
 
 import psycopg2
 from psycopg2.extras import RealDictCursor
@@ -10,17 +10,19 @@ from config import Config
 
 
 def get_connection():
-    # Use Supabase connection string if available
-    db_url = os.getenv('DATABASE_URL')
-    if db_url:
-        return psycopg2.connect(db_url, cursor_factory=RealDictCursor)
-    # Fallback to individual config values (for local dev)
+    if not Config.DB_HOST or not Config.DB_PASSWORD:
+        raise RuntimeError(
+            "Faltan las variables de conexión de Supabase."
+        )
+
     return psycopg2.connect(
         host=Config.DB_HOST,
+        port=Config.DB_PORT,
         user=Config.DB_USER,
         password=Config.DB_PASSWORD,
         dbname=Config.DB_NAME,
         cursor_factory=RealDictCursor,
+        sslmode="require"
     )
 
 
