@@ -44,8 +44,7 @@ def authenticate_user(usuario: str, password: str):
             """
             SELECT id, nombre, usuario, password, edad, ciudad, tipo_vivienda,
                    tiene_patio, otras_mascotas, tiempo_disponible, experiencia,
-                   preferencia_tipo, preferencia_tamano, preferencia_edad, rol,
-                   activo
+                   preferencia_tipo, preferencia_tamano, preferencia_edad, rol
             FROM usuarios
             WHERE usuario = %s
             """,
@@ -59,20 +58,7 @@ def authenticate_user(usuario: str, password: str):
     if user["password"] != hash_password(password):
         return None
 
-    # Si es refugio, asociar el ID del refugio si existe
-    user_serialized = serialize_row(user)
-    if user_serialized.get("rol") == "refugio":
-        with get_cursor() as cursor:
-            cursor.execute(
-                "SELECT id, nombre FROM refugios WHERE usuario_id = %s LIMIT 1",
-                (user_serialized["id"],),
-            )
-            refugio = cursor.fetchone()
-            if refugio:
-                user_serialized["refugio_id"] = refugio["id"]
-                user_serialized["refugio_nombre"] = refugio["nombre"]
-
-    return user_serialized
+    return serialize_row(user)
 
 
 def token_required(fn):

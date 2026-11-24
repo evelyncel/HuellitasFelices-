@@ -1,4 +1,6 @@
+
 from utils.database import get_cursor, serialize_row, serialize_rows
+
 
 PET_COLUMNS = """
     id,
@@ -42,32 +44,47 @@ def get_all_pets(
     if pet_type and pet_type.lower() != "todos":
         query += " AND LOWER(tipo) = LOWER(%s)"
         params.append(pet_type)
+
     if city and city.lower() != "todas":
         query += " AND LOWER(ciudad) LIKE LOWER(%s)"
         params.append(f"%{city}%")
+
     if status and status.lower() != "todos":
         query += " AND LOWER(estado) = LOWER(%s)"
         params.append(status)
+
     if sex and sex.lower() != "todos":
         query += " AND LOWER(sexo) = LOWER(%s)"
         params.append(sex)
+
     if size and size.lower() != "todos":
         query += " AND LOWER(tamano) = LOWER(%s)"
         params.append(size)
+
     if breed and breed.strip():
         query += " AND LOWER(raza) LIKE LOWER(%s)"
         params.append(f"%{breed.strip()}%")
+
     if min_age is not None:
         query += " AND edad >= %s"
         params.append(min_age)
+
     if max_age is not None:
         query += " AND edad <= %s"
         params.append(max_age)
+
     if refugio_id:
         query += " AND refugio_id = %s"
         params.append(refugio_id)
+
     if search and search.strip():
-        query += " AND (LOWER(nombre) LIKE LOWER(%s) OR LOWER(raza) LIKE LOWER(%s) OR LOWER(descripcion) LIKE LOWER(%s))"
+        query += """
+            AND (
+                LOWER(nombre) LIKE LOWER(%s)
+                OR LOWER(raza) LIKE LOWER(%s)
+                OR LOWER(descripcion) LIKE LOWER(%s)
+            )
+        """
         term = f"%{search.strip()}%"
         params.extend([term, term, term])
 
@@ -85,16 +102,21 @@ def create_pet(data):
     edad = data.get("edad")
 
     if not nombre or not tipo or edad is None:
-        raise ValueError("Los campos nombre, tipo y edad son obligatorios")
+        raise ValueError(
+            "Los campos nombre, tipo y edad son obligatorios"
+        )
 
     refugio_id = data.get("refugio_id")
+
     if refugio_id:
         with get_cursor() as cursor:
-            cursor.execute("SELECT id FROM refugios WHERE id = %s", (refugio_id,))
+            cursor.execute(
+                "SELECT id FROM refugios WHERE id = %s",
+                (refugio_id,)
+            )
+
             if not cursor.fetchone():
-                refugio_id = 1
-    else:
-        refugio_id = 1
+                refugio_id = None
 
     sexo = data.get("sexo", "Macho")
     tamano = data.get("tamano", "Mediano")
@@ -103,11 +125,13 @@ def create_pet(data):
     descripcion = data.get("descripcion", "")
     personalidad = data.get("personalidad", "Amigable")
     nivel_energia = data.get("nivel_energia", "Media")
+
     compatible_ninos = bool(data.get("compatible_ninos", False))
     compatible_mascotas = bool(data.get("compatible_mascotas", False))
     vacunado = bool(data.get("vacunado", False))
     desparasitado = bool(data.get("desparasitado", False))
     esterilizado = bool(data.get("esterilizado", False))
+
     estado = data.get("estado", "Disponible")
     foto_url = data.get("foto_url") or None
 
@@ -115,12 +139,30 @@ def create_pet(data):
         cursor.execute(
             """
             INSERT INTO mascotas (
-                refugio_id, nombre, tipo, edad, sexo, tamano, raza, ciudad,
-                descripcion, personalidad, nivel_energia, compatible_ninos,
-                compatible_mascotas, vacunado, desparasitado, esterilizado, estado,
+                refugio_id,
+                nombre,
+                tipo,
+                edad,
+                sexo,
+                tamano,
+                raza,
+                ciudad,
+                descripcion,
+                personalidad,
+                nivel_energia,
+                compatible_ninos,
+                compatible_mascotas,
+                vacunado,
+                desparasitado,
+                esterilizado,
+                estado,
                 foto_url
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (
+                %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                %s, %s, %s, %s, %s, %s, %s, %s, %s
+            )
+            RETURNING id
             """,
             (
                 refugio_id,
@@ -134,16 +176,17 @@ def create_pet(data):
                 descripcion,
                 personalidad,
                 nivel_energia,
-                int(compatible_ninos),
-                int(compatible_mascotas),
-                int(vacunado),
-                int(desparasitado),
-                int(esterilizado),
+                compatible_ninos,
+                compatible_mascotas,
+                vacunado,
+                desparasitado,
+                esterilizado,
                 estado,
                 foto_url,
             ),
         )
-        return cursor.lastrowid
+
+        return cursor.fetchone()["id"]
 
 
 def update_pet(pet_id, data):
@@ -152,27 +195,57 @@ def update_pet(pet_id, data):
     params = []
 
     updatable = [
-        "nombre", "tipo", "edad", "sexo", "tamano", "raza", "ciudad",
-        "descripcion", "personalidad", "nivel_energia", "compatible_ninos",
-        "compatible_mascotas", "vacunado", "desparasitado", "esterilizado",
-        "estado", "foto_url", "refugio_id"
+        "nombre",
+        "tipo",
+        "edad",
+        "sexo",
+        "tamano",
+        "raza",
+        "ciudad",
+        "descripcion",
+        "personalidad",
+        "nivel_energia",
+        "compatible_ninos",
+        "compatible_mascotas",
+        "vacunado",
+        "desparasitado",
+        "esterilizado",
+        "estado",
+        "foto_url",
+        "refugio_id",
+    ]
+
+    boolean_fields = [
+        "compatible_ninos",
+        "compatible_mascotas",
+        "vacunado",
+        "desparasitado",
+        "esterilizado",
     ]
 
     for key in updatable:
         if key in data:
-            val = data[key]
-            if key in ["compatible_ninos", "compatible_mascotas", "vacunado", "desparasitado", "esterilizado"]:
-                val = 1 if bool(val) else 0
-            elif key == "edad" and val is not None:
-                val = int(val)
+            value = data[key]
+
+            if key in boolean_fields:
+                value = bool(value)
+
+            elif key == "edad" and value is not None:
+                value = int(value)
+
             fields.append(f"{key} = %s")
-            params.append(val)
+            params.append(value)
 
     if not fields:
         return False
 
     params.append(pet_id)
-    query = f"UPDATE mascotas SET {', '.join(fields)} WHERE id = %s"
+
+    query = f"""
+        UPDATE mascotas
+        SET {', '.join(fields)}
+        WHERE id = %s
+    """
 
     with get_cursor(commit=True) as cursor:
         cursor.execute(query, tuple(params))
@@ -180,21 +253,43 @@ def update_pet(pet_id, data):
 
 
 def update_pet_status(pet_id, new_status):
+    """Actualiza el estado de una mascota."""
     with get_cursor(commit=True) as cursor:
-        cursor.execute("UPDATE mascotas SET estado = %s WHERE id = %s", (new_status, pet_id))
+        cursor.execute(
+            """
+            UPDATE mascotas
+            SET estado = %s
+            WHERE id = %s
+            """,
+            (new_status, pet_id),
+        )
+
         return cursor.rowcount > 0
 
 
 def delete_pet(pet_id):
+    """Elimina una mascota y sus registros relacionados."""
     with get_cursor(commit=True) as cursor:
-        # Eliminar historial y favoritos primero para evitar violación de FK
-        cursor.execute("DELETE FROM favoritos WHERE mascota_id = %s", (pet_id,))
-        cursor.execute("DELETE FROM historial_veterinario WHERE mascota_id = %s", (pet_id,))
-        cursor.execute("DELETE FROM mascotas WHERE id = %s", (pet_id,))
+        cursor.execute(
+            "DELETE FROM favoritos WHERE mascota_id = %s",
+            (pet_id,),
+        )
+
+        cursor.execute(
+            "DELETE FROM historial_veterinario WHERE mascota_id = %s",
+            (pet_id,),
+        )
+
+        cursor.execute(
+            "DELETE FROM mascotas WHERE id = %s",
+            (pet_id,),
+        )
+
         return cursor.rowcount > 0
 
 
 def search_available_by_city(city):
+    """Busca mascotas disponibles por ciudad."""
     with get_cursor() as cursor:
         cursor.execute(
             f"""
@@ -206,10 +301,12 @@ def search_available_by_city(city):
             """,
             (city,),
         )
+
         return serialize_rows(cursor.fetchall())
 
 
 def filter_by_type_and_age(pet_type, min_age, max_age):
+    """Filtra mascotas por tipo y rango de edad."""
     with get_cursor() as cursor:
         cursor.execute(
             f"""
@@ -222,10 +319,16 @@ def filter_by_type_and_age(pet_type, min_age, max_age):
             """,
             (pet_type, min_age, max_age),
         )
+
         return serialize_rows(cursor.fetchall())
 
 
-def find_compatible_pets(has_children, has_other_pets, preferred_size):
+def find_compatible_pets(
+    has_children,
+    has_other_pets,
+    preferred_size
+):
+    """Busca mascotas compatibles con las condiciones del usuario."""
     with get_cursor() as cursor:
         cursor.execute(
             f"""
@@ -233,16 +336,17 @@ def find_compatible_pets(has_children, has_other_pets, preferred_size):
             FROM mascotas
             WHERE estado = 'Disponible'
               AND tamano = %s
-              AND (%s = 0 OR compatible_ninos = 1)
-              AND (%s = 0 OR compatible_mascotas = 1)
+              AND (%s = FALSE OR compatible_ninos = TRUE)
+              AND (%s = FALSE OR compatible_mascotas = TRUE)
             ORDER BY nombre ASC
             """,
             (
+                bool(has_children),
+                bool(has_other_pets),
                 preferred_size,
-                int(has_children),
-                int(has_other_pets),
             ),
         )
+
         return serialize_rows(cursor.fetchall())
 
 
@@ -254,76 +358,136 @@ def recommend_pets(
     accepts_children,
     accepts_other_pets,
 ):
+    """Recomienda mascotas según las preferencias del usuario."""
     with get_cursor() as cursor:
         query = f"""
             SELECT {PET_COLUMNS}
             FROM mascotas
             WHERE estado = 'Disponible'
         """
+
         params = []
-        if preferred_type and preferred_type.lower() not in ("todos", "ambos"):
+
+        if preferred_type and preferred_type.lower() not in (
+            "todos",
+            "ambos"
+        ):
             query += " AND LOWER(tipo) = LOWER(%s)"
             params.append(preferred_type)
-        if preferred_size and preferred_size.lower() not in ("todos", "cualquiera"):
+
+        if preferred_size and preferred_size.lower() not in (
+            "todos",
+            "cualquiera"
+        ):
             query += " AND LOWER(tamano) = LOWER(%s)"
             params.append(preferred_size)
+
         if min_age is not None and max_age is not None:
             query += " AND edad BETWEEN %s AND %s"
-            params.extend([int(min_age), int(max_age)])
+            params.extend([
+                int(min_age),
+                int(max_age),
+            ])
+
         if accepts_children:
-            query += " AND compatible_ninos = 1"
+            query += " AND compatible_ninos = TRUE"
+
         if accepts_other_pets:
-            query += " AND compatible_mascotas = 1"
+            query += " AND compatible_mascotas = TRUE"
 
         query += " ORDER BY id DESC LIMIT 6"
+
         cursor.execute(query, tuple(params))
-        res = cursor.fetchall()
-        if not res:
-            # Fallback a mascotas disponibles generales si no hay coincidencias estrictas
-            cursor.execute(f"SELECT {PET_COLUMNS} FROM mascotas WHERE estado = 'Disponible' ORDER BY id DESC LIMIT 6")
-            res = cursor.fetchall()
-        return serialize_rows(res)
+        results = cursor.fetchall()
+
+        if not results:
+            cursor.execute(
+                f"""
+                SELECT {PET_COLUMNS}
+                FROM mascotas
+                WHERE estado = 'Disponible'
+                ORDER BY id DESC
+                LIMIT 6
+                """
+            )
+
+            results = cursor.fetchall()
+
+        return serialize_rows(results)
 
 
 def get_pet_statistics():
+    """Obtiene estadísticas generales de las mascotas."""
     with get_cursor() as cursor:
-        cursor.execute("SELECT COUNT(*) AS total FROM mascotas")
+        cursor.execute(
+            "SELECT COUNT(*) AS total FROM mascotas"
+        )
         total = cursor.fetchone()["total"]
 
-        cursor.execute("SELECT COUNT(*) AS total FROM mascotas WHERE estado = 'Disponible'")
+        cursor.execute(
+            """
+            SELECT COUNT(*) AS total
+            FROM mascotas
+            WHERE estado = 'Disponible'
+            """
+        )
         available = cursor.fetchone()["total"]
 
-        cursor.execute("SELECT COUNT(*) AS total FROM mascotas WHERE estado = 'Adoptada'")
+        cursor.execute(
+            """
+            SELECT COUNT(*) AS total
+            FROM mascotas
+            WHERE estado = 'Adoptada'
+            """
+        )
         adopted = cursor.fetchone()["total"]
 
-        cursor.execute("SELECT COUNT(*) AS total FROM mascotas WHERE tipo = 'Perro'")
+        cursor.execute(
+            """
+            SELECT COUNT(*) AS total
+            FROM mascotas
+            WHERE tipo = 'Perro'
+            """
+        )
         dogs = cursor.fetchone()["total"]
 
-        cursor.execute("SELECT COUNT(*) AS total FROM mascotas WHERE tipo = 'Gato'")
+        cursor.execute(
+            """
+            SELECT COUNT(*) AS total
+            FROM mascotas
+            WHERE tipo = 'Gato'
+            """
+        )
         cats = cursor.fetchone()["total"]
 
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT tipo, COUNT(*) AS cantidad
             FROM mascotas
             GROUP BY tipo
             ORDER BY tipo
-        """)
+            """
+        )
         by_type = serialize_rows(cursor.fetchall())
 
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT estado, COUNT(*) AS cantidad
             FROM mascotas
             GROUP BY estado
             ORDER BY estado
-        """)
+            """
+        )
         by_status = serialize_rows(cursor.fetchall())
 
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT ciudad, COUNT(*) AS cantidad
             FROM mascotas
             GROUP BY ciudad
             ORDER BY cantidad DESC
-        """)
+            """
+        )
         by_city = serialize_rows(cursor.fetchall())
 
         return {
@@ -339,6 +503,7 @@ def get_pet_statistics():
 
 
 def get_pet_profile(pet_id):
+    """Obtiene el perfil de una mascota y su historial veterinario."""
     with get_cursor() as cursor:
         cursor.execute(
             """
@@ -368,11 +533,13 @@ def get_pet_profile(pet_id):
                 r.telefono AS refugio_telefono,
                 r.email AS refugio_email
             FROM mascotas m
-            LEFT JOIN refugios r ON m.refugio_id = r.id
+            LEFT JOIN refugios r
+                ON m.refugio_id = r.id
             WHERE m.id = %s
             """,
             (pet_id,),
         )
+
         row = cursor.fetchone()
 
         if not row:
@@ -380,16 +547,23 @@ def get_pet_profile(pet_id):
 
         data = serialize_row(row)
 
-        # Consultar historial veterinario ordenado cronológicamente
         cursor.execute(
             """
-            SELECT id, tipo, descripcion, fecha, proxima_fecha, veterinario, observaciones
+            SELECT
+                id,
+                tipo,
+                descripcion,
+                fecha,
+                proxima_fecha,
+                veterinario,
+                observaciones
             FROM historial_veterinario
             WHERE mascota_id = %s
             ORDER BY fecha DESC, id DESC
             """,
             (pet_id,),
         )
+
         history = serialize_rows(cursor.fetchall())
 
     return {
