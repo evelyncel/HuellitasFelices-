@@ -485,7 +485,7 @@ def seed():
             assigned_ref = refugios[ref_idx % len(refugios)]
             ref_idx += 1
 
-            cursor.execute("""
+            cursor.execute(""" 
                 INSERT INTO mascotas (
                     refugio_id, nombre, tipo, edad, sexo, tamano, raza, ciudad,
                     descripcion, personalidad, nivel_energia, compatible_ninos,
@@ -493,6 +493,7 @@ def seed():
                     estado, foto_url
                 )
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
             """, (
                 assigned_ref["id"],
                 p["nombre"],
@@ -513,7 +514,7 @@ def seed():
                 p["estado"],
                 p["foto_url"],
             ))
-            pet_id = cursor.lastrowid
+            pet_id = cursor.fetchone()["id"]
             inserted_pets.append((pet_id, p["nombre"], p["tipo"]))
             print(f"  + Mascota agregada: {p['nombre']} (#{pet_id} - {p['tipo']}) en {assigned_ref['nombre']}")
 

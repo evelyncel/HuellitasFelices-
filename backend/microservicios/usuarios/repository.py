@@ -176,7 +176,7 @@ def get_admin_dashboard_stats():
         mascotas_por_ciudad = serialize_rows(cursor.fetchall())
 
         cursor.execute("""
-            SELECT DATE_FORMAT(fecha_solicitud, '%Y-%m') AS mes, COUNT(*) AS cantidad
+            SELECT TO_CHAR(fecha_solicitud, 'YYYY-MM') AS mes, COUNT(*) AS cantidad
             FROM adopciones
             WHERE estado = 'Aprobada'
             GROUP BY mes

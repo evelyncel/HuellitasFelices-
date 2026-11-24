@@ -1,19 +1,26 @@
 from contextlib import contextmanager
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
+import os
 
-import pymysql
+import psycopg2
+from psycopg2.extras import RealDictCursor
 
 from config import Config
 
 
 def get_connection():
-    return pymysql.connect(
+    # Use Supabase connection string if available
+    db_url = os.getenv('DATABASE_URL')
+    if db_url:
+        return psycopg2.connect(db_url, cursor_factory=RealDictCursor)
+    # Fallback to individual config values (for local dev)
+    return psycopg2.connect(
         host=Config.DB_HOST,
         user=Config.DB_USER,
         password=Config.DB_PASSWORD,
-        database=Config.DB_NAME,
-        cursorclass=pymysql.cursors.DictCursor,
+        dbname=Config.DB_NAME,
+        cursor_factory=RealDictCursor,
     )
 
 
