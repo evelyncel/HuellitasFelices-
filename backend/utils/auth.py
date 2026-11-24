@@ -1,3 +1,4 @@
+
 import hashlib
 from datetime import datetime, timedelta, timezone
 from functools import wraps
@@ -10,7 +11,7 @@ from utils.database import get_cursor, serialize_row
 
 
 def hash_password(password: str) -> str:
-    """Genera hash SHA-256 para contraseñas, 100% compatible con los datos iniciales de prueba."""
+    """Genera el hash SHA-256 de la contraseña."""
     return hashlib.sha256(password.encode("utf-8")).hexdigest()
 
 
@@ -23,9 +24,11 @@ def create_token(user: dict) -> str:
         "rol": user["rol"],
         "ciudad": user.get("ciudad", ""),
         "refugio_id": user.get("refugio_id"),
-        "exp": datetime.now(timezone.utc) + timedelta(hours=Config.JWT_EXPIRES_HOURS),
+        "exp": datetime.now(timezone.utc)
+        + timedelta(hours=Config.JWT_EXPIRES_HOURS),
         "iat": datetime.now(timezone.utc),
     }
+
     return jwt.encode(payload, Config.JWT_SECRET, algorithm="HS256")
 
 
@@ -42,14 +45,29 @@ def authenticate_user(usuario: str, password: str):
     with get_cursor() as cursor:
         cursor.execute(
             """
-            SELECT id, nombre, usuario, password, edad, ciudad, tipo_vivienda,
-                   tiene_patio, otras_mascotas, tiempo_disponible, experiencia,
-                   preferencia_tipo, preferencia_tamano, preferencia_edad, rol
+            SELECT
+                id,
+                nombre,
+                usuario,
+                password,
+                edad,
+                ciudad,
+                tipo_vivienda,
+                tiene_patio,
+                otras_mascotas,
+                tiempo_disponible,
+                experiencia,
+                preferencia_tipo,
+                preferencia_tamano,
+                preferencia_edad,
+                rol,
+                refugio_id
             FROM usuarios
             WHERE usuario = %s
             """,
             (usuario,),
         )
+
         user = cursor.fetchone()
 
     if not user:
@@ -64,13 +82,14 @@ def authenticate_user(usuario: str, password: str):
 def token_required(fn):
     @wraps(fn)
     def wrapper(*args, **kwargs):
-        # Verificar API Key si se envía o si está configurada obligatoriamente
         api_key_header = request.headers.get("X-API-KEY")
+
         if Config.API_KEY and api_key_header:
             if api_key_header != Config.API_KEY:
                 return jsonify({"error": "X-API-KEY inválida"}), 403
 
         auth_header = request.headers.get("Authorization", "")
+
         if not auth_header.startswith("Bearer "):
             return jsonify({"error": "Token no proporcionado"}), 401
 
@@ -84,22 +103,30 @@ def token_required(fn):
             return jsonify({"error": "Token inválido"}), 401
 
         request.user = payload
+
         return fn(*args, **kwargs)
 
     return wrapper
 
 
 def roles_required(*roles):
-    """Decorador para autorizar roles específicos en el backend."""
+    """Autoriza únicamente los roles permitidos y al administrador."""
+
     def decorator(fn):
         @wraps(fn)
         @token_required
         def wrapper(*args, **kwargs):
             user_role = getattr(request, "user", {}).get("rol")
+
             if user_role not in roles and user_role != "admin":
-                return jsonify({"error": f"Acceso no autorizado para el rol '{user_role}'"}), 403
+                return jsonify({
+                    "error": f"Acceso no autorizado para el rol '{user_role}'"
+                }), 403
+
             return fn(*args, **kwargs)
+
         return wrapper
+
     return decorator
 
 
@@ -111,10 +138,15 @@ def api_key_required(fn):
     @wraps(fn)
     def wrapper(*args, **kwargs):
         api_key = request.headers.get("X-API-KEY")
+
         if not api_key:
-            return jsonify({"error": "Encabezado X-API-KEY no proporcionado"}), 401
+            return jsonify({
+                "error": "Encabezado X-API-KEY no proporcionado"
+            }), 401
+
         if Config.API_KEY and api_key != Config.API_KEY:
             return jsonify({"error": "X-API-KEY inválida"}), 403
+
         return fn(*args, **kwargs)
 
     return wrapper
