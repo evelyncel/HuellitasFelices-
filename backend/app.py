@@ -1,27 +1,73 @@
 
 import os
 import uuid
-from flask import Flask, jsonify, request, send_from_directory
+
+from flask import Flask, jsonify, request
 from flask_cors import CORS
+from supabase import create_client
 
 from config import Config
-from utils.auth import authenticate_user, create_token, token_required, hash_password
+from utils.auth import (
+    authenticate_user,
+    create_token,
+    token_required,
+    hash_password,
+)
 from utils.database import get_cursor
 
 
-# Configuración de carpeta para subida local de archivos de mascotas
-UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+# =========================================================
+# CONFIGURACIÓN DE SUPABASE STORAGE
+# =========================================================
+
+BUCKET_NAME = "mascotas"
+
 ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "webp", "gif"}
+
+MAX_FILE_SIZE = 5 * 1024 * 1024  # 5 MB
+
+ALLOWED_MIME_TYPES = {
+    "jpg": "image/jpeg",
+    "jpeg": "image/jpeg",
+    "png": "image/png",
+    "webp": "image/webp",
+    "gif": "image/gif",
+}
 
 
 def allowed_file(filename):
-    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
+    return (
+        "." in filename
+        and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
+    )
 
 
-# Importar Blueprints de los microservicios
+def get_supabase_storage():
+    """
+    Crea el cliente de Supabase utilizando las variables
+    de entorno existentes en Vercel.
+    """
+
+    supabase_url = os.getenv("SUPABASE_URL")
+    supabase_key = os.getenv("SUPABASE_SECRET_KEY")
+
+    if not supabase_url or not supabase_key:
+        raise RuntimeError(
+            "Faltan SUPABASE_URL o SUPABASE_SECRET_KEY en las variables de entorno"
+        )
+
+    return create_client(supabase_url, supabase_key)
+
+
+# =========================================================
+# IMPORTAR BLUEPRINTS DE LOS MICROSERVICIOS
+# =========================================================
+
 from microservicios.mascotas.routes import mascotas_bp
-from microservicios.adopciones.routes import adopciones_bp, entrevistas_bp
+from microservicios.adopciones.routes import (
+    adopciones_bp,
+    entrevistas_bp,
+)
 from microservicios.veterinario.routes import (
     veterinario_mascotas_bp,
     seguimiento_bp,
@@ -31,10 +77,20 @@ from microservicios.refugios.routes import refugios_bp
 from microservicios.usuarios.routes import usuarios_bp, admin_bp
 
 
+# =========================================================
+# CREACIÓN DE LA APLICACIÓN
+# =========================================================
+
 app = Flask(__name__)
 
+# Límite de tamaño de la petición
+app.config["MAX_CONTENT_LENGTH"] = MAX_FILE_SIZE + (1024 * 1024)
 
-# Configuración de CORS para permitir la conexión con el frontend de Vercel
+
+# =========================================================
+# CONFIGURACIÓN CORS
+# =========================================================
+
 CORS(
     app,
     resources={
@@ -49,7 +105,7 @@ CORS(
         "Content-Type",
         "Authorization",
         "X-API-KEY",
-        "x-api-key"
+        "x-api-key",
     ],
     methods=[
         "GET",
@@ -57,10 +113,14 @@ CORS(
         "PUT",
         "PATCH",
         "DELETE",
-        "OPTIONS"
+        "OPTIONS",
     ],
 )
 
+
+# =========================================================
+# RUTA PRINCIPAL
+# =========================================================
 
 @app.get("/")
 def health():
@@ -79,58 +139,110 @@ def health():
     })
 
 
+# =========================================================
+# SUBIR FOTOGRAFÍAS A SUPABASE STORAGE
+# =========================================================
+
 @app.post("/api/upload")
 def subir_archivo():
-    """Permite subir una fotografía de mascota localmente desde el dispositivo."""
+    """
+    Recibe una fotografía desde el frontend,
+    la almacena en Supabase Storage y devuelve su URL pública.
+    """
+
     if "file" not in request.files and "foto" not in request.files:
-        return jsonify({"error": "No se envió ningún archivo en la petición"}), 400
+        return jsonify({
+            "error": "No se envió ningún archivo en la petición"
+        }), 400
 
     file = request.files.get("file") or request.files.get("foto")
 
     if not file or file.filename == "":
-        return jsonify({"error": "Nombre de archivo inválido o vacío"}), 400
+        return jsonify({
+            "error": "Nombre de archivo inválido o vacío"
+        }), 400
 
     if not allowed_file(file.filename):
         return jsonify({
-            "error": "Formato de archivo no permitido. Use imágenes JPG, JPEG, PNG, WEBP o GIF"
+            "error": "Formato no permitido. Use JPG, JPEG, PNG, WEBP o GIF"
         }), 400
 
-    ext = file.filename.rsplit(".", 1)[1].lower()
-    filename = f"mascota_{uuid.uuid4().hex[:12]}.{ext}"
-    filepath = os.path.join(UPLOAD_FOLDER, filename)
-    file.save(filepath)
+    extension = file.filename.rsplit(".", 1)[1].lower()
 
-    # URL completa accesible por el frontend
-    base_url = request.host_url.rstrip("/")
-    url = f"{base_url}/uploads/{filename}"
+    file_bytes = file.read()
 
-    return jsonify({
-        "mensaje": "Fotografía subida exitosamente",
-        "url": url,
-        "filename": filename,
-    }), 201
+    if not file_bytes:
+        return jsonify({
+            "error": "El archivo está vacío"
+        }), 400
+
+    if len(file_bytes) > MAX_FILE_SIZE:
+        return jsonify({
+            "error": "La imagen supera el límite de 5 MB"
+        }), 400
+
+    try:
+        supabase = get_supabase_storage()
+
+        # Nombre único para evitar reemplazar otras fotografías
+        filename = f"mascota_{uuid.uuid4().hex}.{extension}"
+
+        # Tipo MIME según la extensión
+        content_type = ALLOWED_MIME_TYPES[extension]
+
+        # Subir el archivo al bucket mascotas
+        supabase.storage.from_(BUCKET_NAME).upload(
+            path=filename,
+            file=file_bytes,
+            file_options={
+                "content-type": content_type,
+                "cache-control": "3600",
+                "upsert": "false",
+            },
+        )
+
+        # Obtener la dirección pública de la imagen
+        public_url = supabase.storage.from_(BUCKET_NAME).get_public_url(
+            filename
+        )
+
+        return jsonify({
+            "mensaje": "Fotografía subida exitosamente",
+            "url": public_url,
+            "filename": filename,
+        }), 201
+
+    except Exception as e:
+        print(f"ERROR AL SUBIR FOTOGRAFÍA: {str(e)}")
+
+        return jsonify({
+            "error": "No se pudo subir la fotografía. Verifica la configuración de Supabase Storage."
+        }), 500
 
 
-@app.get("/uploads/<filename>")
-def servir_archivo_subido(filename):
-    """Sirve los archivos locales subidos para mostrarlos en el frontend."""
-    return send_from_directory(UPLOAD_FOLDER, filename)
-
+# =========================================================
+# AUTENTICACIÓN: INICIAR SESIÓN
+# =========================================================
 
 @app.post("/auth/login")
 @app.post("/api/auth/login")
 def login():
     data = request.get_json(silent=True) or {}
+
     usuario = (data.get("usuario") or "").strip()
     password = data.get("password") or ""
 
     if not usuario or not password:
-        return jsonify({"error": "usuario y password son obligatorios"}), 400
+        return jsonify({
+            "error": "usuario y password son obligatorios"
+        }), 400
 
     user = authenticate_user(usuario, password)
 
     if not user:
-        return jsonify({"error": "Credenciales inválidas"}), 401
+        return jsonify({
+            "error": "Credenciales inválidas"
+        }), 401
 
     if user.get("activo") is False or user.get("activo") == 0:
         return jsonify({
@@ -156,6 +268,10 @@ def login():
     })
 
 
+# =========================================================
+# AUTENTICACIÓN: REGISTRO
+# =========================================================
+
 @app.post("/auth/register")
 @app.post("/api/auth/register")
 def register():
@@ -169,20 +285,32 @@ def register():
     try:
         edad = int(data.get("edad") or 25)
     except (ValueError, TypeError):
-        return jsonify({"error": "La edad debe ser un número válido"}), 400
+        return jsonify({
+            "error": "La edad debe ser un número válido"
+        }), 400
 
     tipo_vivienda = data.get("tipo_vivienda") or "Casa"
 
     def convertir_booleano(valor):
         if isinstance(valor, str):
-            return valor.strip().lower() in ("true", "1", "si", "sí", "yes")
+            return valor.strip().lower() in (
+                "true", "1", "si", "sí", "yes"
+            )
         return bool(valor)
 
-    tiene_patio = convertir_booleano(data.get("tiene_patio", False))
-    otras_mascotas = convertir_booleano(data.get("otras_mascotas", False))
+    tiene_patio = convertir_booleano(
+        data.get("tiene_patio", False)
+    )
+
+    otras_mascotas = convertir_booleano(
+        data.get("otras_mascotas", False)
+    )
 
     tiempo_disponible = data.get("tiempo_disponible") or "Medio"
-    experiencia = (data.get("experiencia") or "Amante de los animales").strip()
+    experiencia = (
+        data.get("experiencia") or "Amante de los animales"
+    ).strip()
+
     preferencia_tipo = data.get("preferencia_tipo") or "Todos"
     preferencia_tamano = data.get("preferencia_tamano") or "Mediano"
     preferencia_edad = data.get("preferencia_edad") or "Joven"
@@ -270,26 +398,34 @@ def register():
 
     except Exception as e:
         print(f"ERROR EN REGISTRO: {str(e)}")
+
         return jsonify({
             "error": f"Error al registrar usuario: {str(e)}"
         }), 500
+
+
+# =========================================================
+# AUTENTICACIÓN: USUARIO ACTUAL
+# =========================================================
 
 @app.get("/auth/me")
 @app.get("/api/auth/me")
 @token_required
 def me():
-    """Endpoint para verificar sesión y obtener información del usuario actual."""
+    """Verifica sesión y obtiene información del usuario actual."""
+
     user = getattr(request, "user", {})
 
-    # Refrescar información completa desde DB
     with get_cursor() as cursor:
         cursor.execute(
             """
-           SELECT id, nombre, usuario, rol, ciudad, edad
-FROM usuarios WHERE id = %s
+            SELECT id, nombre, usuario, rol, ciudad, edad
+            FROM usuarios
+            WHERE id = %s
             """,
             (user.get("id"),)
         )
+
         db_user = cursor.fetchone()
 
     return jsonify({
@@ -298,7 +434,10 @@ FROM usuarios WHERE id = %s
     })
 
 
-# Registrar Blueprints
+# =========================================================
+# REGISTRAR BLUEPRINTS
+# =========================================================
+
 app.register_blueprint(mascotas_bp)
 app.register_blueprint(adopciones_bp)
 app.register_blueprint(entrevistas_bp)
@@ -309,6 +448,10 @@ app.register_blueprint(refugios_bp)
 app.register_blueprint(usuarios_bp)
 app.register_blueprint(admin_bp)
 
+
+# =========================================================
+# EJECUCIÓN LOCAL
+# =========================================================
 
 if __name__ == "__main__":
     port = Config.SERVER_PORT

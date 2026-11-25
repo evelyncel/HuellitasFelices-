@@ -76,14 +76,12 @@ export default {
   /**
    * Sube una imagen localmente desde el dispositivo al servidor.
    */
-  async subirFoto(file) {
-    const formData = new FormData()
-    formData.append('file', file)
-    const response = await api.post('/api/upload', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    })
-    return response.data
-  },
+ async subirFoto(file) {
+  const formData = new FormData()
+  formData.append('file', file)
+
+  const response = await api.post('/api/upload', formData)
+
+  return response.data
+}
 }
